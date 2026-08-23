@@ -32,6 +32,8 @@ export function MembersPanel({
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"editor" | "viewer">("viewer");
   const [busy, setBusy] = useState(false);
+  const [pendingMemberId, setPendingMemberId] = useState<string | null>(null);
+  const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(null);
 
   async function onInvite(e: FormEvent) {
     e.preventDefault();
@@ -66,6 +68,49 @@ export function MembersPanel({
       toast(err?.message ?? "Failed to create invite link", "error");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleRoleChange(memberId: string, newRole: "editor" | "viewer") {
+    if (!guard()) return;
+    setPendingMemberId(memberId);
+    try {
+      await updateRole({
+        wishlistId: wid,
+        memberId: memberId as any,
+        role: newRole as any,
+      });
+      toast("Role updated", "success");
+    } catch (err: any) {
+      toast(err?.message ?? "Failed to update role", "error");
+    } finally {
+      setPendingMemberId(null);
+    }
+  }
+
+  async function handleRemove(memberId: string) {
+    if (!guard()) return;
+    setPendingMemberId(memberId);
+    try {
+      await removeMember({ wishlistId: wid, memberId: memberId as any });
+      toast("Member removed", "success");
+    } catch (err: any) {
+      toast(err?.message ?? "Failed to remove member", "error");
+    } finally {
+      setPendingMemberId(null);
+    }
+  }
+
+  async function handleRevoke(token: string) {
+    if (!guard()) return;
+    setPendingInviteToken(token);
+    try {
+      await revokeInvite({ wishlistId: wid, token: token as any });
+      toast("Invite revoked", "success");
+    } catch (err: any) {
+      toast(err?.message ?? "Failed to revoke invite", "error");
+    } finally {
+      setPendingInviteToken(null);
     }
   }
 
@@ -130,7 +175,7 @@ export function MembersPanel({
           Members
         </h4>
         <ul className="divide-y divide-slate-100">
-          {members.map((m) => (
+          {members.map((m: { id: string; name: string; email: string; role: string }) => (
             <li key={m.id} className="flex items-center justify-between py-2">
               <div className="flex min-w-0 items-center gap-2">
                 <div className="min-w-0">
@@ -146,12 +191,9 @@ export function MembersPanel({
                     <Select
                       className="!w-auto !py-1 text-xs"
                       value={m.role}
+                      disabled={pendingMemberId === m.id}
                       onChange={(e) =>
-                        updateRole({
-                          wishlistId: wid,
-                          memberId: m.id,
-                          role: e.target.value as any,
-                        })
+                        handleRoleChange(m.id, e.target.value as "editor" | "viewer")
                       }
                     >
                       <option value="editor">Editor</option>
@@ -160,7 +202,9 @@ export function MembersPanel({
                     <Button
                       variant="ghost"
                       className="!px-2 !py-1 text-xs text-rose-600"
-                      onClick={() => removeMember({ wishlistId: wid, memberId: m.id })}
+                      loading={pendingMemberId === m.id}
+                      disabled={pendingMemberId === m.id}
+                      onClick={() => handleRemove(m.id)}
                     >
                       Remove
                     </Button>
@@ -180,7 +224,7 @@ export function MembersPanel({
             Pending invites
           </h4>
           <ul className="divide-y divide-slate-100">
-            {invites.map((inv) => (
+            {invites.map((inv: { token: string; email?: string | null; role: string; used?: boolean }) => (
               <li key={inv.token} className="flex items-center justify-between py-2 text-sm">
                 <span className="truncate text-slate-700">
                   {inv.email ?? "Anyone with link"}
@@ -190,7 +234,9 @@ export function MembersPanel({
                 <Button
                   variant="ghost"
                   className="!px-2 !py-1 text-xs text-rose-600"
-                  onClick={() => revokeInvite({ wishlistId: wid, token: inv.token })}
+                  loading={pendingInviteToken === inv.token}
+                  disabled={pendingInviteToken === inv.token}
+                  onClick={() => handleRevoke(inv.token)}
                 >
                   Revoke
                 </Button>

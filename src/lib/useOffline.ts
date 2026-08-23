@@ -9,11 +9,13 @@ import { useToast } from "@/components/ui/Toast";
  */
 export function useOfflineGuard() {
   const toast = useToast();
-  const [offline, setOffline] = useState(
-    typeof navigator !== "undefined" ? !navigator.onLine : false,
-  );
+  // Always render the same on server and on first client paint to avoid
+  // hydration mismatch; sync to the real navigator state in an effect.
+  const [offline, setOffline] = useState(false);
 
   useEffect(() => {
+    const sync = () => setOffline(!navigator.onLine);
+    sync();
     const on = () => setOffline(false);
     const off = () => setOffline(true);
     window.addEventListener("online", on);

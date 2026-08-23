@@ -47,6 +47,7 @@ export function ItemForm({ listId, canEdit, initial, onDone, onCancel }: Props) 
   );
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [image, setImage] = useState<string | undefined>(initial?.image);
+  const [imageRemoved, setImageRemoved] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -55,6 +56,7 @@ export function ItemForm({ listId, canEdit, initial, onDone, onCancel }: Props) 
     try {
       const dataUrl = await compressImage(file);
       setImage(dataUrl);
+      setImageRemoved(false);
     } catch (err: any) {
       toast(err?.message ?? "Could not compress image", "error");
     }
@@ -94,6 +96,9 @@ export function ItemForm({ listId, canEdit, initial, onDone, onCancel }: Props) 
     try {
       if (initial?.id) {
         await updateItem({ itemId: initial.id as any, item: payload });
+        if (imageRemoved) {
+          await removeImage({ itemId: initial.id as any });
+        }
         toast("Item updated", "success");
       } else {
         await addItem({ wishlistId: listId as any, item: payload });
@@ -107,12 +112,12 @@ export function ItemForm({ listId, canEdit, initial, onDone, onCancel }: Props) 
     }
   }
 
-  async function onRemoveImage() {
-    if (initial?.id) {
-      await removeImage({ itemId: initial.id as any });
-    }
+  function onRemoveImage() {
+    // Defer server removal until save — closing without saving must not delete.
+    // Keep affordance instant by clearing preview locally.
     setImage(undefined);
-    toast("Image reset to auto-fetch", "info");
+    setImageRemoved(true);
+    toast("Image removed — save to apply", "info");
   }
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
@@ -84,7 +84,7 @@ function SignedInDashboard() {
         </div>
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {lists.map((list) => {
+          {lists.map((list: (typeof lists)[number]) => {
             const showCount =
               list.role !== "owner" ||
               (list.eventDate != null && list.eventDate <= Date.now());
@@ -110,8 +110,18 @@ function SignedInDashboard() {
 }
 
 function GuestDashboard() {
-  // Read once per mount so the query args stay referentially stable.
-  const [tokens] = useState(getVisitedTokens);
+  const [tokens, setTokens] = useState<string[]>(() => getVisitedTokens());
+  useEffect(() => {
+    const sync = () => setTokens(getVisitedTokens());
+    window.addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", sync);
+    const id = window.setInterval(sync, 2000);
+    return () => {
+      window.removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", sync);
+      window.clearInterval(id);
+    };
+  }, []);
   const visited = useQuery(
     api.wishlists.getPublicListsByTokens,
     tokens.length > 0 ? { tokens } : "skip",
@@ -150,7 +160,7 @@ function GuestDashboard() {
           </div>
         ) : (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {visited.map((list) => (
+            {visited.map((list: (typeof visited)[number]) => (
               <ListRow
                 key={list.token}
                 href={`/invite/${list.token}`}

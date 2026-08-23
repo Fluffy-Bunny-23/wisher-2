@@ -78,7 +78,7 @@ export function GuestItemCard({
         /* eslint-disable-next-line @next/next/no-img-element */
         <img
           src={item.image}
-          alt=""
+          alt={item.name}
           className="h-16 w-16 shrink-0 rounded-lg border border-slate-100 object-cover"
         />
       )}
@@ -86,7 +86,7 @@ export function GuestItemCard({
         <div className="flex items-start justify-between gap-2">
           <span
             className={`truncate font-medium ${
-              item.purchased ? "text-slate-400 line-through" : "text-slate-900"
+              item.purchased ? "text-slate-600 line-through" : "text-slate-900"
             }`}
           >
             {item.name}

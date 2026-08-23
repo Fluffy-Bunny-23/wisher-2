@@ -59,6 +59,62 @@ describe("parseWishlistDocument", () => {
     expect(() => parseWishlistDocument(JSON.stringify(bad))).toThrowError(/priceMinor/);
   });
 
+  it("rejects null priceMinor (must be omitted, not null)", () => {
+    const bad = {
+      schemaVersion: 1,
+      lists: [{ title: "X", items: [{ name: "Y", priceMinor: null }] }],
+    };
+    expect(() => parseWishlistDocument(JSON.stringify(bad))).toThrowError(/priceMinor/);
+  });
+
+  it("round-trips doc with omitted optional fields", () => {
+    const minimal = {
+      schemaVersion: 1,
+      lists: [{ title: "Minimal", items: [{ name: "OnlyName" }] }],
+    };
+    const doc = parseWishlistDocument(JSON.stringify(minimal));
+    expect(doc.lists[0].title).toBe("Minimal");
+    expect(doc.lists[0].items[0].name).toBe("OnlyName");
+    expect(doc.lists[0].description).toBeUndefined();
+    expect(doc.lists[0].eventDate).toBeUndefined();
+    expect(doc.lists[0].ordered).toBeUndefined();
+    expect(doc.lists[0].items[0].url).toBeUndefined();
+    expect(doc.lists[0].items[0].priceMinor).toBeUndefined();
+    expect(doc.lists[0].items[0].rank).toBeUndefined();
+  });
+
+  it("rejects non-http url", () => {
+    const bad = {
+      schemaVersion: 1,
+      lists: [{ title: "X", items: [{ name: "Y", url: "ftp://example.com/file" }] }],
+    };
+    expect(() => parseWishlistDocument(JSON.stringify(bad))).toThrowError(/url/i);
+  });
+
+  it("rejects negative rank", () => {
+    const bad = {
+      schemaVersion: 1,
+      lists: [{ title: "X", items: [{ name: "Y", rank: -1 }] }],
+    };
+    expect(() => parseWishlistDocument(JSON.stringify(bad))).toThrowError(/rank/);
+  });
+
+  it("rejects negative eventDate", () => {
+    const bad = {
+      schemaVersion: 1,
+      lists: [{ title: "X", eventDate: -100, items: [{ name: "Y" }] }],
+    };
+    expect(() => parseWishlistDocument(JSON.stringify(bad))).toThrowError(/eventDate/);
+  });
+
+  it("rejects non-integer eventDate", () => {
+    const bad = {
+      schemaVersion: 1,
+      lists: [{ title: "X", eventDate: 123.45, items: [{ name: "Y" }] }],
+    };
+    expect(() => parseWishlistDocument(JSON.stringify(bad))).toThrowError(/eventDate/);
+  });
+
   it("rejects unknown extra fields", () => {
     const bad = {
       schemaVersion: 1,

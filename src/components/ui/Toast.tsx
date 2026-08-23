@@ -47,7 +47,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((t) => (
           <div
             key={t.id}
-            role="status"
+            role={t.type === "error" ? "alert" : "status"}
+            aria-live={t.type === "error" ? "assertive" : "polite"}
             className={`pointer-events-auto rounded-lg px-4 py-3 text-sm font-medium text-white shadow-lg ${colors[t.type]}`}
           >
             {t.message}

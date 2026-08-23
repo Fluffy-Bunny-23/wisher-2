@@ -31,6 +31,7 @@ export function ItemCard({
   position,
   total,
   showPurchased,
+  canReorder = false,
 }: {
   item: Item;
   listId: string;
@@ -38,6 +39,7 @@ export function ItemCard({
   position: number;
   total: number;
   showPurchased: boolean;
+  canReorder?: boolean;
 }) {
   const toast = useToast();
   const { guard } = useOfflineGuard();
@@ -75,6 +77,10 @@ export function ItemCard({
   }
 
   async function onMove(dir: "up" | "down") {
+    // Reorder is only meaningful in the manual (custom) sort with no filters;
+    // position comes from the filtered/sorted view, so moving by +/-1 would
+    // corrupt rank ordering. Guarded by canReorder from the list page.
+    if (!canReorder) return;
     if (!guard()) return;
     try {
       await moveItem({ itemId: item.id as any, toIndex: dir === "up" ? position - 1 : position + 1 });
@@ -109,7 +115,7 @@ export function ItemCard({
   return (
     <div
       className={`flex gap-3 rounded-2xl border bg-white p-3 shadow-sm ${
-        item.purchased ? "border-slate-200 opacity-60" : "border-slate-200"
+        item.purchased ? "border-slate-200 opacity-90" : "border-slate-200"
       }`}
     >
       {item.image && (
@@ -121,7 +127,7 @@ export function ItemCard({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={item.image}
-            alt=""
+            alt={item.name}
             className="h-16 w-16 rounded-lg border border-slate-100 object-cover"
           />
         </Link>
@@ -136,13 +142,15 @@ export function ItemCard({
               href={`/lists/${listId}/items/${item.id}`}
               title="Open this item for details and options"
               className={`truncate font-medium ${
-                item.purchased ? "text-slate-400 line-through" : "text-slate-900"
+                item.purchased ? "text-slate-600 line-through" : "text-slate-900"
               }`}
             >
               {item.name}
             </Link>
           </div>
-          {canEdit && (
+          {canEdit && canReorder && (
+            // Manual reorder only valid when sorted by custom rank with no filters;
+            // otherwise position is a filtered/sorted index and move +/-1 would scramble rank.
             <div className="flex shrink-0 gap-1">
               <Button
                 variant="ghost"

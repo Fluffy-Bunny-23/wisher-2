@@ -66,7 +66,7 @@ export default function ListPage() {
     return sortItems(filtered, sortBy);
   }, [items, sortBy, purchaseFilter, priorityFilter]);
 
-  const purchasedCount = items?.filter((i) => i.purchased).length ?? 0;
+  const purchasedCount = items?.filter((i: NonNullable<typeof items>[number]) => i.purchased).length ?? 0;
 
   async function onExport() {
     if (!exportData) return;
@@ -348,6 +348,7 @@ export default function ListPage() {
                   position={idx}
                   total={processed.length}
                   showPurchased={showPurchased}
+                  canReorder={sortBy === "custom" && purchaseFilter === "all" && priorityFilter === "all"}
                 />
               </li>
             ))}

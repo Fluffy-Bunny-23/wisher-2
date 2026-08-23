@@ -112,7 +112,11 @@ export const addItem = mutation({
     const name = item.name.trim();
     if (!name) throw new Error("Name is required");
     validateItemFields(item);
-    // Append to the end of the manual order by default.
+    // Collision-safe rank assignment: derive nextRank from the current max rank
+    // over the indexed by_wishlistId query within this transactional mutation.
+    // Convex mutations run as serializable transactions with OCC — if two
+    // concurrent addItem calls read the same max rank, the second to commit
+    // retries and recomputes, so no two inserts receive the same rank.
     const siblings = await ctx.db
       .query("items")
       .withIndex("by_wishlistId", (q) => q.eq("wishlistId", access.list._id))
@@ -219,6 +223,12 @@ export const claimPurchased = mutation({
     if (!invite || invite.wishlistId !== item.wishlistId) {
       throw new Error("Invalid invite link for this list");
     }
+    if (invite.usedAt) {
+      throw new Error("Invite has already been used");
+    }
+    if (invite.email && invite.email.toLowerCase() !== (args.email ?? "").trim().toLowerCase()) {
+      throw new Error("This invite was issued to a different email address");
+    }
 
     const name = args.name.trim();
     if (!name) throw new Error("Please enter your name");
@@ -250,6 +260,9 @@ export const listPublicItems = query({
       .withIndex("by_token", (q) => q.eq("token", args.token))
       .first();
     if (!invite) return null;
+    if (invite.usedAt) return null;
+    const list = await ctx.db.get(invite.wishlistId);
+    if (!list) return null;
     const items = await ctx.db
       .query("items")
       .withIndex("by_wishlistId", (q) => q.eq("wishlistId", invite.wishlistId))
