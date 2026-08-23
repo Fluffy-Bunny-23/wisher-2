@@ -19,7 +19,6 @@ export function ConfirmDialog({
   onCancel: () => void;
 }) {
   const titleId = useId();
-  const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -67,7 +66,6 @@ export function ConfirmDialog({
 
   return (
     <div
-      ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={onCancel}
     >
