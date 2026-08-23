@@ -196,6 +196,9 @@ export const getPublicList = query({
       ownerName: owner.name,
       role: invite.role,
       token: invite.token,
+      // Email-bound invites: guests must claim purchases with this address,
+      // so the UI can ask for it up front instead of failing on submit.
+      inviteEmail: invite.email ?? null,
     };
   },
 });

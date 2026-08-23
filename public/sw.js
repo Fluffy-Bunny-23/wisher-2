@@ -20,10 +20,19 @@ function offlineFallbackResponse() {
 }
 
 self.addEventListener("install", (event) => {
-  // Fail the install if precaching fails so the browser will retry.
-  // Do not swallow addAll rejections.
+  // Precache each URL individually: one 404/miss must not leave the app with
+  // no service worker at all (that would disable offline support entirely),
+  // but genuine failures are not silently swallowed either.
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)),
+    caches.open(CACHE).then((cache) =>
+      Promise.allSettled(
+        PRECACHE.map((url) =>
+          cache.add(new Request(url, { cache: "reload" })).catch((err) => {
+            console.warn(`[wisher-sw] precache miss: ${url}`, err);
+          }),
+        ),
+      ),
+    ),
   );
   self.skipWaiting();
 });

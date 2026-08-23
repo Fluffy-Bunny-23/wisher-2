@@ -122,6 +122,43 @@ describe("images SSRF guards", () => {
     expect(isAllowedUrl("http://0.0.0.0/")).toBe(false);
   });
 
+  it("blocks non-canonical IPv4 literals that resolve to private addresses", () => {
+    // Integer form: 2130706433 == 127.0.0.1
+    expect(isBlockedHostname("2130706433")).toBe(true);
+    expect(isAllowedUrl("http://2130706433/")).toBe(false);
+    // Hex form: 0x7f000001 == 127.0.0.1
+    expect(isBlockedHostname("0x7f000001")).toBe(true);
+    expect(isAllowedUrl("http://0x7f000001/")).toBe(false);
+    // Octal labels: 0177.0.0.1 == 127.0.0.1 (Number() would misread as 177)
+    expect(isBlockedHostname("0177.0.0.1")).toBe(true);
+    expect(isAllowedUrl("http://0177.0.0.1/")).toBe(false);
+    // Mixed-width shorthand: 127.1 == 127.0.0.1
+    expect(isBlockedHostname("127.1")).toBe(true);
+    expect(isAllowedUrl("http://127.1/")).toBe(false);
+    // Metadata IP in integer form: 2852039166 == 169.254.169.254
+    expect(isBlockedHostname("2852039166")).toBe(true);
+    expect(isAllowedUrl("http://2852039166/")).toBe(false);
+    // Public integer literals must stay allowed: 134744072 == 8.8.8.8
+    expect(isBlockedHostname("134744072")).toBe(false);
+    expect(isAllowedUrl("http://134744072/")).toBe(true);
+  });
+
+  it("blocks IPv4-mapped IPv6 addresses in hex form", () => {
+    // ::ffff:a00:1 == ::ffff:10.0.0.1 (no dot in the string)
+    expect(isBlockedHostname("::ffff:a00:1")).toBe(true);
+    expect(isAllowedUrl("http://[::ffff:a00:1]/")).toBe(false);
+    // Dotted-quad tail form stays blocked
+    expect(isBlockedHostname("::ffff:10.0.0.1")).toBe(true);
+    expect(isAllowedUrl("http://[::ffff:10.0.0.1]/")).toBe(false);
+    expect(isAllowedUrl("http://[::ffff:169.254.169.254]/")).toBe(false);
+    // Full-form IPv4-mapped loopback
+    expect(isBlockedHostname("0:0:0:0:0:ffff:127.0.0.1")).toBe(true);
+    // Public mapped address stays allowed: ::ffff:8.8.8.8
+    expect(isBlockedHostname("::ffff:808:808")).toBe(false);
+    // Plain IPv6 loopback variants
+    expect(isBlockedHostname("0:0:0:0:0:0:0:1")).toBe(true);
+  });
+
   it("blocks private ranges 10/8, 172.16/12, 192.168/16, fc00::/7, fe80::/10", () => {
     expect(isAllowedUrl("http://10.0.0.1/")).toBe(false);
     expect(isAllowedUrl("http://10.255.255.255/")).toBe(false);

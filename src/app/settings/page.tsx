@@ -20,17 +20,19 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false);
 
   const [dirty, setDirty] = useState(false);
+  // Sync the input from the server profile only when a different user's
+  // profile arrives — never mid-edit, and never from a stale post-save query
+  // result (which would briefly revert the field before Convex pushes).
   const profileIdRef = React.useRef<string | null>(null);
   useEffect(() => {
     if (!profile) return;
     const id = (profile as { userId?: string }).userId ?? profile.email ?? "";
-    const isIdentityChange = profileIdRef.current !== null && profileIdRef.current !== id;
-    if (profileIdRef.current === null || isIdentityChange || !dirty) {
+    if (profileIdRef.current !== id) {
       setName(profile.name ?? "");
       setDirty(false);
+      profileIdRef.current = id;
     }
-    profileIdRef.current = id;
-  }, [profile, dirty]);
+  }, [profile]);
 
   async function onSave(e: FormEvent) {
     e.preventDefault();

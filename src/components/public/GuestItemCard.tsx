@@ -24,10 +24,13 @@ interface PublicItem {
 export function GuestItemCard({
   item,
   token,
+  inviteEmail,
   onChanged,
 }: {
   item: PublicItem;
   token: string;
+  /** Set when the invite is bound to an address: claims must come from it. */
+  inviteEmail?: string | null;
   onChanged: () => void;
 }) {
   const toast = useToast();
@@ -35,7 +38,7 @@ export function GuestItemCard({
   const claim = useMutation(api.items.claimPurchased);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(inviteEmail ?? "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -43,6 +46,12 @@ export function GuestItemCard({
     e.preventDefault();
     if (!name.trim()) {
       toast("Please enter your name", "error");
+      return;
+    }
+    // Fail fast instead of after a round-trip: email-bound invites reject
+    // any other address server-side.
+    if (inviteEmail && email.trim().toLowerCase() !== inviteEmail.toLowerCase()) {
+      toast(`This wishlist only accepts purchases claimed as ${inviteEmail}`, "error");
       return;
     }
     if (!guard()) return;
@@ -132,10 +141,14 @@ export function GuestItemCard({
                     placeholder="e.g. Grandma"
                   />
                 </Field>
-                <Field label="Email (optional)" htmlFor={`email-${item.id}`}>
+                <Field
+                  label={inviteEmail ? `Email (${inviteEmail})` : "Email (optional)"}
+                  htmlFor={`email-${item.id}`}
+                >
                   <Input
                     id={`email-${item.id}`}
                     type="email"
+                    required={Boolean(inviteEmail)}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
