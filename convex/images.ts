@@ -174,11 +174,31 @@ function isPrivateIPv6Groups(groups: number[]): boolean {
   const allZeroExceptLast = groups.slice(0, 7).every((g) => g === 0);
   // ::1 loopback and :: unspecified
   if (allZeroExceptLast && (groups[7] === 1 || groups[7] === 0)) return true;
+  const embeddedV4 = () =>
+    isPrivateIPv4Bytes([
+      (groups[6] >> 8) & 0xff,
+      groups[6] & 0xff,
+      (groups[7] >> 8) & 0xff,
+      groups[7] & 0xff,
+    ]);
   // IPv4-mapped ::ffff:0:0/96 — evaluate the embedded v4 address
   if (
     g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0xffff
   ) {
-    return isPrivateIPv4Bytes([(groups[6] >> 8) & 0xff, groups[6] & 0xff, (groups[7] >> 8) & 0xff, groups[7] & 0xff]);
+    return embeddedV4();
+  }
+  // NAT64 translation prefixes 64:ff9b::/96 (well-known) and 64:ff9b:1::/96
+  // (local-use): gateways route the final 32 bits to that IPv4 address, so
+  // http://[64:ff9b::10.0.0.1]/ reaches internal hosts through them.
+  if (
+    g0 === 0x64 &&
+    g1 === 0xff9b &&
+    (g2 === 0 || g2 === 1) &&
+    g3 === 0 &&
+    g4 === 0 &&
+    g5 === 0
+  ) {
+    return embeddedV4();
   }
   // fc00::/7 unique-local
   if (g0 >= 0xfc00 && g0 <= 0xfdff) return true;
@@ -190,10 +210,14 @@ function isPrivateIPv6Groups(groups: number[]): boolean {
 export function isBlockedHostname(hostname: string): boolean {
   // URL.hostname keeps the square brackets on IPv6 literals ("[::1]");
   // strip them so the address parsers below see the bare address.
-  const lower = hostname
+  const stripped = hostname
     .toLowerCase()
     .replace(/\.$/, "")
     .replace(/^\[(.+)\]$/, "$1");
+  // Link-local literals can carry a zone ID, percent-encoded by URL
+  // ("[fe80::1%25eth0]" → hostname "...%25eth0"); drop it so the address
+  // itself parses. "%" never appears in real hostnames otherwise.
+  const lower = stripped.split("%")[0];
   if (lower === "localhost" || lower.endsWith(".localhost")) return true;
   // Non-canonical IPv4 literals ("2130706433", "0x7f000001", "0177.0.0.1",
   // "127.1") resolve to the same address as their dotted-decimal form, so

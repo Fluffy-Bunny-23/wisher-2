@@ -159,6 +159,34 @@ describe("images SSRF guards", () => {
     expect(isBlockedHostname("0:0:0:0:0:0:0:1")).toBe(true);
   });
 
+  it("blocks NAT64 translation prefixes routing to private IPv4", () => {
+    // Well-known prefix 64:ff9b::/96 translates the last 32 bits to IPv4.
+    expect(isAllowedUrl("http://[64:ff9b::10.0.0.1]/")).toBe(false);
+    expect(isAllowedUrl("http://[64:ff9b::169.254.169.254]/")).toBe(false);
+    // Same address in hex form (no dot in the string)
+    expect(isBlockedHostname("64:ff9b::a00:1")).toBe(true);
+    // Local-use variant 64:ff9b:1::/96
+    expect(isAllowedUrl("http://[64:ff9b:1::127.0.0.1]/")).toBe(false);
+    // Public targets behind the prefix stay allowed
+    expect(isAllowedUrl("http://[64:ff9b::8.8.8.8]/")).toBe(true);
+    expect(isAllowedUrl("http://[64:ff9b:1::8.8.8.8]/")).toBe(true);
+    // Unrelated prefixes sharing a leading 64: must not match
+    expect(isAllowedUrl("http://[64:ff9c::10.0.0.1]/")).toBe(true);
+  });
+
+  it("strips IPv6 zone IDs before parsing", () => {
+    // URL keeps the percent-encoded "%" of link-local zone IDs ("%25" = "%").
+    expect(isBlockedHostname("fe80::1%25eth0")).toBe(true);
+    expect(isBlockedHostname("fe80::1%25en0")).toBe(true);
+    // A zone suffix must not stop an otherwise-blocked address parsing
+    expect(isBlockedHostname("::ffff:127.0.0.1%25eth0")).toBe(true);
+    // ...and must not make a public host blocked either
+    expect(isBlockedHostname("2001:db8::1%25eth0")).toBe(false);
+    // This runtime's WHATWG URL parser rejects zone-id literals outright,
+    // so isAllowedUrl fails closed on them regardless of the strip above.
+    expect(isAllowedUrl("http://[fe80::1%25eth0]/")).toBe(false);
+  });
+
   it("blocks private ranges 10/8, 172.16/12, 192.168/16, fc00::/7, fe80::/10", () => {
     expect(isAllowedUrl("http://10.0.0.1/")).toBe(false);
     expect(isAllowedUrl("http://10.255.255.255/")).toBe(false);
