@@ -114,7 +114,16 @@ function GuestDashboard() {
   useEffect(() => {
     // The visited cookie only changes in other tabs/documents, so re-syncing
     // on focus and visibility changes covers it without polling forever.
-    const sync = () => setTokens(getVisitedTokens());
+    // Skip the state write when nothing changed so the tokens query doesn't
+    // re-run on every focus event.
+    const sync = () => {
+      const next = getVisitedTokens();
+      setTokens((prev) =>
+        prev.length === next.length && prev.every((t, i) => t === next[i])
+          ? prev
+          : next,
+      );
+    };
     window.addEventListener("focus", sync);
     document.addEventListener("visibilitychange", sync);
     return () => {
