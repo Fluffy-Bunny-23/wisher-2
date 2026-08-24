@@ -20,7 +20,8 @@ export function MembersPanel({
   const toast = useToast();
   const { guard } = useOfflineGuard();
   const { authed } = useAuth();
-  // Route params arrive as plain strings; Convex validators want branded ids.
+  // Route params arrive as plain strings; Convex accepts them at runtime, but
+  // the generated hooks' TypeScript signatures use branded Id<...> types.
   const wid = listId as Id<"wishlists">;
   const members = useQuery(api.wishlistMembers.listMembers, authed ? { wishlistId: wid } : "skip");
   const invites = useQuery(api.wishlistInvites.listInvites, authed ? { wishlistId: wid } : "skip");
