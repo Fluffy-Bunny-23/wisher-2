@@ -35,6 +35,9 @@ export function ImportDialog({ listId, onImported, onClose }: Props) {
     // Compress any inline base64 images before insert so docs stay under 900KB.
     // If compression fails or the payload is still >900KB, surface a friendly
     // error and drop the oversized image rather than sending a >1MB doc.
+    // Note: compared against the data-URL's character count, not decoded
+    // bytes — deliberately matching MAX_BASE64's string-length semantics on
+    // the server, and conservative since base64 chars >= decoded bytes.
     const MAX_IMAGE_BYTES = 900 * 1024;
     for (const list of doc.lists) {
       for (const item of list.items) {

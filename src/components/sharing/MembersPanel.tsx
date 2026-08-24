@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
+import type { Id } from "@convex/_generated/dataModel";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
@@ -19,7 +20,9 @@ export function MembersPanel({
   const toast = useToast();
   const { guard } = useOfflineGuard();
   const { authed } = useAuth();
-  const wid = listId as any;
+  // Route params arrive as plain strings; Convex accepts them at runtime, but
+  // the generated hooks' TypeScript signatures use branded Id<...> types.
+  const wid = listId as Id<"wishlists">;
   const members = useQuery(api.wishlistMembers.listMembers, authed ? { wishlistId: wid } : "skip");
   const invites = useQuery(api.wishlistInvites.listInvites, authed ? { wishlistId: wid } : "skip");
 
@@ -71,14 +74,17 @@ export function MembersPanel({
     }
   }
 
-  async function handleRoleChange(memberId: string, newRole: "editor" | "viewer") {
+  async function handleRoleChange(
+    memberId: Id<"users">,
+    newRole: "editor" | "viewer",
+  ) {
     if (!guard()) return;
     setPendingMemberId(memberId);
     try {
       await updateRole({
         wishlistId: wid,
-        memberId: memberId as any,
-        role: newRole as any,
+        memberId,
+        role: newRole,
       });
       toast("Role updated", "success");
     } catch (err: any) {
@@ -88,11 +94,11 @@ export function MembersPanel({
     }
   }
 
-  async function handleRemove(memberId: string) {
+  async function handleRemove(memberId: Id<"users">) {
     if (!guard()) return;
     setPendingMemberId(memberId);
     try {
-      await removeMember({ wishlistId: wid, memberId: memberId as any });
+      await removeMember({ wishlistId: wid, memberId });
       toast("Member removed", "success");
     } catch (err: any) {
       toast(err?.message ?? "Failed to remove member", "error");
@@ -105,7 +111,7 @@ export function MembersPanel({
     if (!guard()) return;
     setPendingInviteToken(token);
     try {
-      await revokeInvite({ wishlistId: wid, token: token as any });
+      await revokeInvite({ wishlistId: wid, token });
       toast("Invite revoked", "success");
     } catch (err: any) {
       toast(err?.message ?? "Failed to revoke invite", "error");
@@ -141,7 +147,7 @@ export function MembersPanel({
             <Select
               id="invite-role"
               value={role}
-              onChange={(e) => setRole(e.target.value as any)}
+              onChange={(e) => setRole(e.target.value as "editor" | "viewer")}
             >
               <option value="viewer">Viewer</option>
               <option value="editor">Editor</option>
@@ -159,7 +165,7 @@ export function MembersPanel({
           <Select
             className="!w-auto"
             value={role}
-            onChange={(e) => setRole(e.target.value as any)}
+            onChange={(e) => setRole(e.target.value as "editor" | "viewer")}
           >
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
@@ -175,7 +181,7 @@ export function MembersPanel({
           Members
         </h4>
         <ul className="divide-y divide-slate-100">
-          {members.map((m: { id: string; name: string; email: string; role: string }) => (
+          {members.map((m) => (
             <li key={m.id} className="flex items-center justify-between py-2">
               <div className="flex min-w-0 items-center gap-2">
                 <div className="min-w-0">
@@ -224,7 +230,7 @@ export function MembersPanel({
             Pending invites
           </h4>
           <ul className="divide-y divide-slate-100">
-            {invites.map((inv: { token: string; email?: string | null; role: string; used?: boolean }) => (
+            {invites.map((inv) => (
               <li key={inv.token} className="flex items-center justify-between py-2 text-sm">
                 <span className="truncate text-slate-700">
                   {inv.email ?? "Anyone with link"}
