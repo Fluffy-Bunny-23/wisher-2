@@ -11,18 +11,23 @@ async function collectList(ctx: QueryCtx, list: any) {
     .collect();
   return {
     title: list.title,
-    description: list.description ?? "",
-    items: items.map((item: any) => ({
-      name: item.name,
-      url: item.url ?? "",
-      priceMinor: item.priceMinor ?? null,
-      currency: item.currency,
-      image: item.image ?? "",
-      notes: item.notes ?? "",
-      rank: item.rank ?? null,
-      priority: item.priority ?? "medium",
-      purchased: item.purchased,
-    })),
+    ...(list.description ? { description: list.description } : {}),
+    ...(typeof list.eventDate === "number" ? { eventDate: list.eventDate } : {}),
+    ...(typeof list.ordered === "boolean" ? { ordered: list.ordered } : {}),
+    items: items.map((item: any) => {
+      const out: Record<string, unknown> = {
+        name: item.name,
+      };
+      if (item.url) out.url = item.url;
+      if (typeof item.priceMinor === "number") out.priceMinor = item.priceMinor;
+      if (item.currency) out.currency = item.currency;
+      if (item.image) out.image = item.image;
+      if (item.notes) out.notes = item.notes;
+      if (typeof item.rank === "number") out.rank = item.rank;
+      if (item.priority) out.priority = item.priority;
+      out.purchased = item.purchased;
+      return out;
+    }),
   };
 }
 

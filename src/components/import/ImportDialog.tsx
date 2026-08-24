@@ -32,14 +32,47 @@ export function ImportDialog({ listId, onImported, onClose }: Props) {
       toast(err?.message ?? "Invalid document", "error");
       return;
     }
-    // Compress any inline base64 images before insert so docs stay under 900KB
+    // Compress any inline base64 images before insert so docs stay under 900KB.
+    // If compression fails or the payload is still >900KB, surface a friendly
+    // error and drop the oversized image rather than sending a >1MB doc.
+    const MAX_IMAGE_BYTES = 900 * 1024;
     for (const list of doc.lists) {
       for (const item of list.items) {
         if (item.image?.startsWith("data:image")) {
-          try {
-            item.image = await compressImage(item.image);
-          } catch {
-            // keep original if compression fails
+          if (item.image.length > MAX_IMAGE_BYTES) {
+            try {
+              item.image = await compressImage(item.image);
+            } catch (err: any) {
+              toast(
+                `Image for "${item.name}" is too large and could not be compressed — it will be imported without an image.`,
+                "error",
+              );
+              item.image = undefined;
+              continue;
+            }
+            // compress harder with smaller dimensions if still over limit
+            if (item.image.length > MAX_IMAGE_BYTES) {
+              try {
+                item.image = await compressImage(item.image, {
+                  maxDimension: 300,
+                  quality: 0.6,
+                });
+              } catch {
+                toast(
+                  `Image for "${item.name}" is too large even after compression — it will be imported without an image.`,
+                  "error",
+                );
+                item.image = undefined;
+                continue;
+              }
+            }
+            if (item.image.length > MAX_IMAGE_BYTES) {
+              toast(
+                `Image for "${item.name}" exceeds 900KB after compression and will be imported without an image.`,
+                "error",
+              );
+              item.image = undefined;
+            }
           }
         }
       }

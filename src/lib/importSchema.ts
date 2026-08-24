@@ -1,9 +1,16 @@
 import { z } from "zod";
 
+const httpUrlSchema = z
+  .string()
+  .url("url must be a valid http/https URL")
+  .refine((v) => v.startsWith("http://") || v.startsWith("https://"), {
+    message: "url must be a valid http/https URL",
+  });
+
 export const importItemSchema = z
   .object({
     name: z.string({ required_error: "name is required" }).min(1, "name is required"),
-    url: z.string().optional(),
+    url: httpUrlSchema.optional(),
     priceMinor: z
       .number()
       .int("priceMinor must be an integer (minor currency units)")
@@ -12,7 +19,11 @@ export const importItemSchema = z
     currency: z.string().regex(/^[A-Za-z]{3}$/, "currency must be a 3-letter ISO 4217 code").optional(),
     image: z.string().optional(),
     notes: z.string().optional(),
-    rank: z.number().int().optional(),
+    rank: z
+      .number()
+      .int("rank must be an integer")
+      .nonnegative("rank must be non-negative")
+      .optional(),
     priority: z.enum(["low", "medium", "high"]).optional(),
     purchased: z.boolean().optional(),
   })
@@ -22,7 +33,11 @@ export const importListSchema = z
   .object({
     title: z.string({ required_error: "title is required" }).min(1, "title is required"),
     description: z.string().optional(),
-    eventDate: z.number().optional(),
+    eventDate: z
+      .number()
+      .int("eventDate must be an integer timestamp")
+      .nonnegative("eventDate must be non-negative")
+      .optional(),
     ordered: z.boolean().optional(),
     items: z.array(importItemSchema).default([]),
   })
@@ -30,7 +45,7 @@ export const importListSchema = z
 
 export const wishlistDocumentSchema = z
   .object({
-    schemaVersion: z.number().int().default(1),
+    schemaVersion: z.literal(1),
     lists: z.array(importListSchema),
   })
   .strict();

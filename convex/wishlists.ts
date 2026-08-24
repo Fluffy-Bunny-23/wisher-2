@@ -183,6 +183,7 @@ export const getPublicList = query({
       .withIndex("by_token", (q) => q.eq("token", args.token))
       .first();
     if (!invite) return null;
+    if (invite.usedAt) return null;
     const list = await ctx.db.get(invite.wishlistId);
     if (!list) return null;
     const owner = await ownerSummary(ctx, list.ownerId);
@@ -195,6 +196,9 @@ export const getPublicList = query({
       ownerName: owner.name,
       role: invite.role,
       token: invite.token,
+      // Email-bound invites: guests must claim purchases with this address,
+      // so the UI can ask for it up front instead of failing on submit.
+      inviteEmail: invite.email ?? null,
     };
   },
 });
@@ -207,15 +211,20 @@ export const getPublicListsByTokens = query({
   args: { tokens: v.array(v.string()) },
   handler: async (ctx, args) => {
     const seen = new Set<string>();
+    const uniqueTokens: string[] = [];
+    for (const t of args.tokens) {
+      if (!t || seen.has(t)) continue;
+      seen.add(t);
+      if (uniqueTokens.length < 50) uniqueTokens.push(t);
+    }
     const result = [];
-    for (const token of args.tokens) {
-      if (!token || seen.has(token)) continue;
-      seen.add(token);
+    for (const token of uniqueTokens) {
       const invite = await ctx.db
         .query("wishlistInvites")
         .withIndex("by_token", (q) => q.eq("token", token))
         .first();
       if (!invite) continue;
+      if (invite.usedAt) continue;
       const list = await ctx.db.get(invite.wishlistId);
       if (!list) continue;
       const owner = await ownerSummary(ctx, list.ownerId);

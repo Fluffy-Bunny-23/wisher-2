@@ -73,8 +73,11 @@ function AuthBridge({
       async (user) => {
         try {
           if (user) {
-            const token = await user.getIdToken();
-            await convex.setAuth(async () => token);
+            convex.setAuth(async ({ forceRefreshToken }) => {
+              const cur = auth.currentUser;
+              if (!cur) return null;
+              return cur.getIdToken(forceRefreshToken);
+            });
             await storeUserRef.current();
           } else {
             await convex.clearAuth();

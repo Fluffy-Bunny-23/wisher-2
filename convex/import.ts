@@ -47,14 +47,21 @@ export const importLists = mutation({
         .collect();
       let nextRank =
         existingDocs.reduce((m, e) => Math.max(m, e.rank ?? 0), -1) + 1;
+      // Dedupe rule: when url is absent dedupe on normalized name alone;
+      // when url is present dedupe on name + url (both lower-cased/trimmed).
+      const dedupeKey = (name: string, url?: string) => {
+        const n = name.trim().toLowerCase();
+        const u = url?.trim();
+        return u ? `${n}::${u.toLowerCase()}` : n;
+      };
       const existingKeys = new Set(
-        existingDocs.map((e) => `${e.name.trim().toLowerCase()}::${e.url ?? ""}`),
+        existingDocs.map((e) => dedupeKey(e.name, e.url)),
       );
       for (const item of items) {
         const name = (item.name ?? "").trim();
         if (!name) continue;
         validateItemFields(item);
-        const key = `${name.toLowerCase()}::${item.url || undefined}`;
+        const key = dedupeKey(name, item.url);
         if (dedupe && existingKeys.has(key)) continue;
         existingKeys.add(key);
         const id = await ctx.db.insert("items", {

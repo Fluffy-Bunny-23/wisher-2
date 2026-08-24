@@ -26,10 +26,15 @@ export default function InvitePage() {
   // While still loading auth, wait before showing join controls.
   const ready = !loading;
 
-  // Remember this list for the visitor dashboard (cookie for guests).
+  // Only record valid invites. Guarded until queries succeed so garbage tokens never pollute the cookie.
   useEffect(() => {
-    if (token) addVisitedToken(token);
-  }, [token]);
+    if (list && itemsData && token) addVisitedToken(token);
+  }, [list, itemsData, token]);
+
+  // Signed-out visitors keep the read-only guest view (and the unauthenticated
+  // "I bought this" claim flow); a prominent CTA sends them through /login so
+  // the invite completes after sign-in via the ?redirect= param.
+  const signInHref = `/login?redirect=${encodeURIComponent(`/invite/${token}`)}`;
 
   async function onJoin() {
     setJoinBusy(true);
@@ -68,7 +73,7 @@ export default function InvitePage() {
   }
 
   const items = itemsData.items;
-  const purchasedCount = items.filter((i) => i.purchased).length;
+  const purchasedCount = items.filter((i: (typeof items)[number]) => i.purchased).length;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -110,6 +115,17 @@ export default function InvitePage() {
               </Button>
             </div>
           )}
+          {!user && (
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-sm text-slate-700">
+                You&apos;re browsing as a guest. You can mark items as bought below, or sign
+                in to add this wishlist to your lists.
+              </p>
+              <Link href={signInHref}>
+                <Button variant="secondary">Sign in to join</Button>
+              </Link>
+            </div>
+          )}
         </div>
 
         {items.length === 0 ? (
@@ -120,9 +136,14 @@ export default function InvitePage() {
           </div>
         ) : (
           <ul className="flex flex-col gap-3">
-            {items.map((item) => (
+            {items.map((item: (typeof items)[number]) => (
               <li key={item.id}>
-                <GuestItemCard item={item} token={token} onChanged={() => {}} />
+                <GuestItemCard
+                  item={item}
+                  token={token}
+                  inviteEmail={list.inviteEmail ?? undefined}
+                  onChanged={() => {}}
+                />
               </li>
             ))}
           </ul>

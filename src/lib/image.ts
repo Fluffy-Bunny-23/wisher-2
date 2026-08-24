@@ -36,7 +36,11 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 /**
  * Compress/resize an image (file, blob or data URL) to a JPEG/WebP base64 data
- * URL sized so Convex documents stay well under the 1 MB limit.
+ * URL sized so Convex documents stay well under the 1 MB limit (~900 KB budget).
+ *
+ * Enforces the budget with a quality + max-dimension fallback loop: tries the
+ * requested dimensions first, then progressively lowers JPEG quality and shrinks
+ * the long edge until the data URL fits under MAX_BASE64.
  */
 export async function compressImage(
   source: File | Blob | string,
@@ -49,23 +53,62 @@ export async function compressImage(
   const dataUrl =
     typeof source === "string" ? source : await readFileAsDataUrl(source);
   const img = await loadImage(dataUrl);
-  const { width, height } = downscaleDimensions(
-    img.naturalWidth || img.width,
-    img.naturalHeight || img.height,
-    maxDimension,
-  );
+  const origW = img.naturalWidth || img.width;
+  const origH = img.naturalHeight || img.height;
 
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas not supported");
-  ctx.drawImage(img, 0, 0, width, height);
-  const compressed = canvas.toDataURL(type, quality);
-  if (compressed.length > MAX_BASE64) {
-    throw new Error("Image is too large after compression");
+
+  // Build quality steps from requested quality down to 0.3.
+  function qualitySteps(start: number): number[] {
+    const clamped = Math.max(0.1, Math.min(1, start));
+    const steps: number[] = [];
+    for (let q = clamped; q >= 0.32; q = Math.round((q - 0.12) * 100) / 100) {
+      steps.push(q);
+      if (q <= 0.35) break;
+    }
+    if (steps[steps.length - 1] !== 0.3) steps.push(0.3);
+    return steps;
   }
-  return compressed;
+
+  // Dimension steps: requested maxDimension, then geometrically smaller.
+  const dimSteps: number[] = [];
+  {
+    let d = maxDimension;
+    // Include requested and up to 5 reductions down to ~160px.
+    for (let i = 0; i < 6; i++) {
+      dimSteps.push(Math.max(160, Math.round(d)));
+      if (d <= 160) break;
+      d *= 0.72;
+    }
+  }
+
+  const qs = qualitySteps(quality);
+
+  let smallest: string | null = null;
+
+  for (const dim of dimSteps) {
+    const { width, height } = downscaleDimensions(origW, origH, dim);
+    canvas.width = width;
+    canvas.height = height;
+    // Reset any prior scaling state after resize.
+    ctx.drawImage(img, 0, 0, width, height);
+
+    for (const q of qs) {
+      const compressed = canvas.toDataURL(type, q);
+      if (compressed.length <= MAX_BASE64) return compressed;
+      if (!smallest || compressed.length < smallest.length) smallest = compressed;
+    }
+  }
+
+  // As a final guard, if even the smallest rendition is over budget, reject
+  // with context so callers can surface a friendly message. The loop above
+  // guarantees we already tried minimum dimensions + lowest quality.
+  if (smallest && smallest.length <= MAX_BASE64) return smallest;
+  throw new Error(
+    `Image is too large after compression (${smallest ? smallest.length : 0} chars > ${MAX_BASE64} budget)`,
+  );
 }
 
 /** Build an inline SVG placeholder data URL used when no image is available. */

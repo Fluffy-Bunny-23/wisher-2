@@ -10,7 +10,16 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !user && pathname) {
+      // Guard against redirect loops if this component is ever rendered on a
+      // public route (spec: /login, /signup, /invite/* are public).
+      if (
+        pathname.startsWith("/login") ||
+        pathname.startsWith("/signup") ||
+        pathname.startsWith("/invite")
+      ) {
+        return;
+      }
       const redirect = encodeURIComponent(pathname);
       router.replace(`/login?redirect=${redirect}`);
     }
@@ -24,6 +33,8 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
     );
   }
 
+  // While the redirect effect above is pending (loading false, no user),
+  // render nothing to avoid flashing protected content before navigation.
   if (!user) return null;
 
   return <>{children}</>;

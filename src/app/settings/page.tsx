@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import React, { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { sendPasswordResetEmail, signOut } from "firebase/auth";
@@ -19,8 +19,19 @@ export default function SettingsPage() {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const [dirty, setDirty] = useState(false);
+  // Sync the input from the server profile only when a different user's
+  // profile arrives — never mid-edit, and never from a stale post-save query
+  // result (which would briefly revert the field before Convex pushes).
+  const profileIdRef = React.useRef<string | null>(null);
   useEffect(() => {
-    if (profile) setName(profile.name ?? "");
+    if (!profile) return;
+    const id = (profile as { userId?: string }).userId ?? profile.email ?? "";
+    if (profileIdRef.current !== id) {
+      setName(profile.name ?? "");
+      setDirty(false);
+      profileIdRef.current = id;
+    }
   }, [profile]);
 
   async function onSave(e: FormEvent) {
@@ -28,6 +39,7 @@ export default function SettingsPage() {
     setBusy(true);
     try {
       await updateProfile({ name: name.trim() });
+      setDirty(false);
       toast("Profile updated", "success");
     } catch (err: any) {
       toast(err?.message ?? "Failed to update profile", "error");
@@ -75,7 +87,7 @@ export default function SettingsPage() {
               </div>
             </div>
             <Field label="Display name" htmlFor="name">
-              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input id="name" value={name} onChange={(e) => { setDirty(true); setName(e.target.value); }} />
             </Field>
             <Button type="submit" loading={busy}>
               Save profile

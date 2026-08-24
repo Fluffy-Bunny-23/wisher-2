@@ -156,3 +156,88 @@ describe("public view + guest claiming (no sign-in)", () => {
     ).rejects.toThrowError(/Invalid invite/);
   });
 });
+
+describe("burned token blocks public access and guest claims", () => {
+  it("getPublicList returns null for a burned (accepted) token", async () => {
+    const t = convexTest(schema, modules);
+    const sarah = t.withIdentity({ name: "Sarah", email: "sarah@example.com", subject: "user-sarah" });
+    const lee = t.withIdentity({ name: "Lee", email: "lee@example.com", subject: "user-lee" });
+    await sarah.mutation(api.users.storeUser);
+    await lee.mutation(api.users.storeUser);
+    const listId = await sarah.mutation(api.wishlists.createWishlist, { title: "BurnedList" });
+    await sarah.mutation(api.items.addItem, { wishlistId: listId, item: { name: "Item1" } });
+    const { token } = await sarah.mutation(api.wishlistInvites.createInviteLink, { wishlistId: listId, role: "viewer" });
+    // burn by accepting
+    await lee.mutation(api.wishlistInvites.acceptInvite, { token });
+    const publicList = await t.query(api.wishlists.getPublicList, { token });
+    expect(publicList).toBeNull();
+  });
+
+  it("getPublicListsByTokens skips burned tokens", async () => {
+    const t = convexTest(schema, modules);
+    const sarah = t.withIdentity({ name: "Sarah", email: "sarah@example.com", subject: "user-sarah" });
+    const lee = t.withIdentity({ name: "Lee", email: "lee@example.com", subject: "user-lee" });
+    await sarah.mutation(api.users.storeUser);
+    await lee.mutation(api.users.storeUser);
+    const listId = await sarah.mutation(api.wishlists.createWishlist, { title: "BurnedBatch" });
+    const { token: tokenBurned } = await sarah.mutation(api.wishlistInvites.createInviteLink, { wishlistId: listId, role: "viewer" });
+    const { token: tokenFresh } = await sarah.mutation(api.wishlistInvites.createInviteLink, { wishlistId: listId, role: "viewer" });
+    await lee.mutation(api.wishlistInvites.acceptInvite, { token: tokenBurned });
+    const result = await t.query(api.wishlists.getPublicListsByTokens, { tokens: [tokenBurned, tokenFresh] });
+    expect(result.find((r: any) => r.token === tokenBurned)).toBeUndefined();
+    expect(result.find((r: any) => r.token === tokenFresh)).toBeDefined();
+  });
+
+  it("listPublicItems returns null for a burned token", async () => {
+    const t = convexTest(schema, modules);
+    const sarah = t.withIdentity({ name: "Sarah", email: "sarah@example.com", subject: "user-sarah" });
+    const lee = t.withIdentity({ name: "Lee", email: "lee@example.com", subject: "user-lee" });
+    await sarah.mutation(api.users.storeUser);
+    await lee.mutation(api.users.storeUser);
+    const listId = await sarah.mutation(api.wishlists.createWishlist, { title: "BurnedItems" });
+    await sarah.mutation(api.items.addItem, { wishlistId: listId, item: { name: "Mug" } });
+    const { token } = await sarah.mutation(api.wishlistInvites.createInviteLink, { wishlistId: listId, role: "viewer" });
+    await lee.mutation(api.wishlistInvites.acceptInvite, { token });
+    const publicItems = await t.query(api.items.listPublicItems, { token });
+    expect(publicItems).toBeNull();
+  });
+
+  it("claimPurchased rejects when token is burned", async () => {
+    const t = convexTest(schema, modules);
+    const sarah = t.withIdentity({ name: "Sarah", email: "sarah@example.com", subject: "user-sarah" });
+    const lee = t.withIdentity({ name: "Lee", email: "lee@example.com", subject: "user-lee" });
+    await sarah.mutation(api.users.storeUser);
+    await lee.mutation(api.users.storeUser);
+    const listId = await sarah.mutation(api.wishlists.createWishlist, { title: "ClaimBurned" });
+    const itemId = await sarah.mutation(api.items.addItem, { wishlistId: listId, item: { name: "Toy" } });
+    const { token } = await sarah.mutation(api.wishlistInvites.createInviteLink, { wishlistId: listId, role: "viewer" });
+    await lee.mutation(api.wishlistInvites.acceptInvite, { token });
+    await expect(
+      t.mutation(api.items.claimPurchased, { token, itemId, name: "Grandma" }),
+    ).rejects.toThrowError(/already been used/i);
+  });
+
+  it("claimPurchased rejects when invite is email-bound and caller supplies wrong email", async () => {
+    const t = convexTest(schema, modules);
+    const sarah = t.withIdentity({ name: "Sarah", email: "sarah@example.com", subject: "user-sarah" });
+    await sarah.mutation(api.users.storeUser);
+    const listId = await sarah.mutation(api.wishlists.createWishlist, { title: "EmailBoundClaim" });
+    const itemId = await sarah.mutation(api.items.addItem, { wishlistId: listId, item: { name: "Book" } });
+    // create email-bound invite for a non-existent user so a token is returned
+    const invite = await sarah.mutation(api.wishlistInvites.inviteByEmail, {
+      wishlistId: listId,
+      email: "invited@example.com",
+      role: "viewer",
+    });
+    expect(invite.kind).toBe("invited");
+    const token = invite.token!;
+    await expect(
+      t.mutation(api.items.claimPurchased, { token, itemId, name: "Guest", email: "wrong@example.com" }),
+    ).rejects.toThrowError(/different email/i);
+    // correct email (case-insensitive) succeeds
+    await t.mutation(api.items.claimPurchased, { token, itemId, name: "Guest", email: "INVITED@EXAMPLE.COM" });
+    const after = await sarah.query(api.items.listItems, { wishlistId: listId });
+    expect(after[0].purchased).toBe(true);
+  });
+});
+
