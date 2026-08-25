@@ -4,6 +4,13 @@ import type { QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireUser } from "./helpers/auth";
 import { requireOwner, getAccess, requireMember } from "./helpers/access";
+import {
+  assertStringLength,
+  MAX_WISHLIST_DESCRIPTION_LENGTH,
+  MAX_WISHLIST_TITLE_LENGTH,
+} from "./schema";
+
+const MAX_LISTS_RETURNED = 50;
 
 async function ownerSummary(ctx: QueryCtx, ownerId: Id<"users">) {
   const owner = await ctx.db.get(ownerId);
@@ -35,10 +42,13 @@ export const createWishlist = mutation({
     const { user } = await requireUser(ctx);
     const title = args.title.trim();
     if (!title) throw new Error("Title is required");
+    assertStringLength(title, MAX_WISHLIST_TITLE_LENGTH, "Title");
+    const description = args.description?.trim() || undefined;
+    assertStringLength(description, MAX_WISHLIST_DESCRIPTION_LENGTH, "Description");
     const id = await ctx.db.insert("wishlists", {
       ownerId: user._id,
       title,
-      description: args.description?.trim() || undefined,
+      description,
       eventDate: args.eventDate,
       ordered: args.ordered ?? true,
     });
@@ -69,16 +79,29 @@ export const getWishlists = query({
 
     const ownedWithRole = owned.map((l) => ({ list: l, role: "owner" as const }));
 
+    const seenIds = new Set<Id<"wishlists">>();
     const all = [...ownedWithRole, ...memberLists.filter(Boolean)].filter(
-      (entry, i, arr) =>
-        arr.findIndex((e) => e!.list._id === entry!.list._id) === i,
+      (entry) => {
+        const id = entry!.list._id;
+        if (seenIds.has(id)) return false;
+        seenIds.add(id);
+        return true;
+      },
     );
 
+    // Bound the N+1 item scans in the dashboard query. A denormalized
+    // itemCount/purchasedCount on the wishlist doc (maintained on
+    // add/delete/toggle/claim + backfill) would remove the per-list
+    // collect entirely, but requires a schema change outside this file.
+    const capped = all.length > MAX_LISTS_RETURNED ? all.slice(0, MAX_LISTS_RETURNED) : all;
+
     return Promise.all(
-      all.map(async (entry) => {
+      capped.map(async (entry) => {
         const list = entry!.list;
-        const owner = await ownerSummary(ctx, list.ownerId);
-        const counts = await listCounts(ctx, list._id);
+        const [owner, counts] = await Promise.all([
+          ownerSummary(ctx, list.ownerId),
+          listCounts(ctx, list._id),
+        ]);
         return {
           id: list._id,
           title: list.title,
@@ -106,8 +129,10 @@ export const getWishlist = query({
     } catch {
       return null;
     }
-    const owner = await ownerSummary(ctx, access.list.ownerId);
-    const counts = await listCounts(ctx, access.list._id);
+    const [owner, counts] = await Promise.all([
+      ownerSummary(ctx, access.list.ownerId),
+      listCounts(ctx, access.list._id),
+    ]);
     return {
       id: access.list._id,
       title: access.list.title,
@@ -139,9 +164,12 @@ export const editWishlist = mutation({
     }
     const title = args.title.trim();
     if (!title) throw new Error("Title is required");
+    assertStringLength(title, MAX_WISHLIST_TITLE_LENGTH, "Title");
+    const description = args.description?.trim() || undefined;
+    assertStringLength(description, MAX_WISHLIST_DESCRIPTION_LENGTH, "Description");
     await ctx.db.patch(list._id, {
       title,
-      description: args.description?.trim() || undefined,
+      description,
       eventDate: args.eventDate,
       ordered: args.ordered ?? list.ordered,
     });
@@ -156,17 +184,17 @@ export const deleteWishlist = mutation({
       .query("items")
       .withIndex("by_wishlistId", (q) => q.eq("wishlistId", args.listId))
       .collect();
-    for (const item of items) await ctx.db.delete(item._id);
+    await Promise.all(items.map((item) => ctx.db.delete(item._id)));
     const members = await ctx.db
       .query("wishlistMembers")
       .withIndex("by_wishlistId", (q) => q.eq("wishlistId", args.listId))
       .collect();
-    for (const m of members) await ctx.db.delete(m._id);
+    await Promise.all(members.map((m) => ctx.db.delete(m._id)));
     const invites = await ctx.db
       .query("wishlistInvites")
       .withIndex("by_wishlistId", (q) => q.eq("wishlistId", args.listId))
       .collect();
-    for (const inv of invites) await ctx.db.delete(inv._id);
+    await Promise.all(invites.map((inv) => ctx.db.delete(inv._id)));
     await ctx.db.delete(args.listId);
   },
 });
@@ -217,27 +245,28 @@ export const getPublicListsByTokens = query({
       seen.add(t);
       if (uniqueTokens.length < 50) uniqueTokens.push(t);
     }
-    const result = [];
-    for (const token of uniqueTokens) {
-      const invite = await ctx.db
-        .query("wishlistInvites")
-        .withIndex("by_token", (q) => q.eq("token", token))
-        .first();
-      if (!invite) continue;
-      if (invite.usedAt) continue;
-      const list = await ctx.db.get(invite.wishlistId);
-      if (!list) continue;
-      const owner = await ownerSummary(ctx, list.ownerId);
-      result.push({
-        id: list._id,
-        token,
-        title: list.title,
-        description: list.description ?? "",
-        eventDate: list.eventDate ?? null,
-        ordered: list.ordered,
-        ownerName: owner.name,
-      });
-    }
-    return result;
+    const results = await Promise.all(
+      uniqueTokens.map(async (token) => {
+        const invite = await ctx.db
+          .query("wishlistInvites")
+          .withIndex("by_token", (q) => q.eq("token", token))
+          .first();
+        if (!invite) return null;
+        if (invite.usedAt) return null;
+        const list = await ctx.db.get(invite.wishlistId);
+        if (!list) return null;
+        const owner = await ownerSummary(ctx, list.ownerId);
+        return {
+          id: list._id,
+          token,
+          title: list.title,
+          description: list.description ?? "",
+          eventDate: list.eventDate ?? null,
+          ordered: list.ordered,
+          ownerName: owner.name,
+        };
+      }),
+    );
+    return results.filter((r) => r !== null);
   },
 });

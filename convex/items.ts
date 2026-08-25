@@ -1,7 +1,16 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { requireEditor, requireMember } from "./helpers/access";
-import { priorityValidator } from "./schema";
+import {
+  assertStringLength,
+  MAX_ITEM_NAME_LENGTH,
+  MAX_ITEM_NOTES_LENGTH,
+  MAX_ITEM_URL_LENGTH,
+  MAX_PURCHASED_BY_EMAIL_LENGTH,
+  MAX_PURCHASED_BY_NAME_LENGTH,
+  MAX_PURCHASED_BY_NOTE_LENGTH,
+  priorityValidator,
+} from "./schema";
 import { MAX_BASE64 } from "./images";
 import { internal } from "./_generated/api";
 
@@ -20,10 +29,15 @@ const CURRENCY_RE = /^[A-Za-z]{3}$/;
 
 /** Server-side semantic validation shared by addItem/updateItem/import. */
 export function validateItemFields(item: {
+  name?: string;
   priceMinor?: number;
   currency?: string;
   image?: string;
+  url?: string;
+  rank?: number;
+  notes?: string;
 }) {
+  assertStringLength(item.name, MAX_ITEM_NAME_LENGTH, "Name");
   if (
     item.priceMinor != null &&
     (!Number.isFinite(item.priceMinor) ||
@@ -32,11 +46,33 @@ export function validateItemFields(item: {
   ) {
     throw new Error("Price must be a non-negative integer of minor units");
   }
+  if (
+    item.rank != null &&
+    (!Number.isFinite(item.rank) ||
+      !Number.isInteger(item.rank) ||
+      item.rank < 0)
+  ) {
+    throw new Error("Rank must be a non-negative integer");
+  }
   if (item.currency && !CURRENCY_RE.test(item.currency)) {
     throw new Error("Currency must be a 3-letter ISO 4217 code");
   }
   if (item.image && item.image.length > MAX_BASE64) {
     throw new Error("Image is too large (max 900KB)");
+  }
+  assertStringLength(item.notes, MAX_ITEM_NOTES_LENGTH, "Notes");
+  if (item.url != null && item.url.trim() !== "") {
+    const trimmedUrl = item.url.trim();
+    assertStringLength(trimmedUrl, MAX_ITEM_URL_LENGTH, "URL");
+    let protocol: string;
+    try {
+      protocol = new URL(trimmedUrl).protocol;
+    } catch {
+      throw new Error("URL must be a valid http/https URL");
+    }
+    if (protocol !== "http:" && protocol !== "https:") {
+      throw new Error("URL must be a valid http/https URL");
+    }
   }
 }
 
@@ -117,11 +153,16 @@ export const addItem = mutation({
     // Convex mutations run as serializable transactions with OCC — if two
     // concurrent addItem calls read the same max rank, the second to commit
     // retries and recomputes, so no two inserts receive the same rank.
-    const siblings = await ctx.db
-      .query("items")
-      .withIndex("by_wishlistId", (q) => q.eq("wishlistId", access.list._id))
-      .collect();
-    const nextRank = siblings.reduce((m, s) => Math.max(m, s.rank ?? 0), -1) + 1;
+    // Skip the scan when an explicit rank is supplied — the max-rank query
+    // is only needed for auto-placement at the end.
+    let nextRank = item.rank;
+    if (nextRank == null) {
+      const siblings = await ctx.db
+        .query("items")
+        .withIndex("by_wishlistId", (q) => q.eq("wishlistId", access.list._id))
+        .collect();
+      nextRank = siblings.reduce((m, s) => Math.max(m, s.rank ?? 0), -1) + 1;
+    }
     const id = await ctx.db.insert("items", {
       wishlistId: access.list._id,
       name,
@@ -130,7 +171,7 @@ export const addItem = mutation({
       currency: (item.currency || "USD").toUpperCase(),
       image: item.image || undefined,
       notes: item.notes?.trim() || undefined,
-      rank: item.rank ?? nextRank,
+      rank: nextRank,
       priority: item.priority ?? "medium",
       purchased: false,
     });
@@ -158,7 +199,7 @@ export const updateItem = mutation({
       name,
       url: item.url?.trim() || undefined,
       priceMinor: item.priceMinor,
-      currency: item.currency || existing.currency,
+      currency: item.currency ? item.currency.toUpperCase() : existing.currency,
       image: resetImage ? undefined : explicitImage || existing.image,
       notes: item.notes?.trim() || undefined,
       rank: item.rank ?? existing.rank,
@@ -232,6 +273,9 @@ export const claimPurchased = mutation({
 
     const name = args.name.trim();
     if (!name) throw new Error("Please enter your name");
+    assertStringLength(name, MAX_PURCHASED_BY_NAME_LENGTH, "Name");
+    assertStringLength(args.email?.trim(), MAX_PURCHASED_BY_EMAIL_LENGTH, "Email");
+    assertStringLength(args.note?.trim(), MAX_PURCHASED_BY_NOTE_LENGTH, "Note");
 
     if (item.purchased) {
       throw new Error("This item has already been bought");
@@ -280,7 +324,9 @@ export const listPublicItems = query({
         rank: item.rank ?? null,
         priority: item.priority ?? "medium",
         purchased: item.purchased,
-        purchasedBy: item.purchasedBy ?? null,
+        purchasedBy: item.purchasedBy
+          ? { name: item.purchasedBy.name, note: item.purchasedBy.note ?? null }
+          : null,
         createdTime: item._creationTime,
       })),
     };
@@ -332,23 +378,40 @@ export const moveItem = mutation({
     if (!existing) throw new Error("Item not found");
     await requireEditor(ctx, existing.wishlistId);
 
+    if (!Number.isFinite(args.toIndex) || !Number.isInteger(args.toIndex)) {
+      throw new Error("toIndex must be a finite integer");
+    }
+
     const items = await ctx.db
       .query("items")
       .withIndex("by_wishlistId", (q) => q.eq("wishlistId", existing.wishlistId))
       .collect();
+    // Guard against O(n) write amplification in one transaction.
+    if (items.length > 200) {
+      throw new Error("List is too large to reorder in one operation");
+    }
     const ordered = [...items].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
     const fromIndex = ordered.findIndex((i) => i._id === existing._id);
     if (fromIndex < 0) throw new Error("Item not found");
     const toIndex = Math.max(0, Math.min(ordered.length - 1, args.toIndex));
 
+    if (fromIndex === toIndex) return;
     const reordered = [...ordered];
     reordered.splice(fromIndex, 1);
     reordered.splice(toIndex, 0, existing);
 
-    for (let i = 0; i < reordered.length; i++) {
-      if (reordered[i]._id !== existing._id || reordered[i].rank !== i) {
-        await ctx.db.patch(reordered[i]._id, { rank: i });
+    // Only the slice between fromIndex and toIndex can have changed rank;
+    // items outside the window keep their current rank (gaps from deletes are
+    // harmless for ordering and avoid rewriting N docs on every +/-1 move).
+    // Run the affected patches concurrently.
+    const lo = Math.min(fromIndex, toIndex);
+    const hi = Math.max(fromIndex, toIndex);
+    const patches: Promise<void>[] = [];
+    for (let i = lo; i <= hi; i++) {
+      if (reordered[i].rank !== i) {
+        patches.push(ctx.db.patch(reordered[i]._id, { rank: i }));
       }
     }
+    await Promise.all(patches);
   },
 });

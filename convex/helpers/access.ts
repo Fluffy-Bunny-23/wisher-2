@@ -14,7 +14,8 @@ export async function getAccess(ctx: DbCtx, wishlistId: Id<"wishlists">) {
   const { user } = await requireUser(ctx);
   const list = await ctx.db.get(wishlistId);
   if (!list) {
-    throw new Error("Wishlist not found");
+    console.log(`getAccess denied: wishlist ${wishlistId} not found for user ${user._id}`);
+    throw new Error("Wishlist not found or access denied");
   }
 
   let role: Role;
@@ -28,7 +29,10 @@ export async function getAccess(ctx: DbCtx, wishlistId: Id<"wishlists">) {
       )
       .first();
     if (!member) {
-      throw new Error("Not a member of this wishlist");
+      console.log(
+        `getAccess denied: user ${user._id} not a member of wishlist ${wishlistId}`,
+      );
+      throw new Error("Wishlist not found or access denied");
     }
     role = member.role;
   }

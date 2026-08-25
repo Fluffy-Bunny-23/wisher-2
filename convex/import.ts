@@ -4,7 +4,27 @@ import { requireUser } from "./helpers/auth";
 import { requireEditor } from "./helpers/access";
 import { priorityValidator } from "./schema";
 import { validateItemFields } from "./items";
+import { MAX_BASE64 } from "./images";
 import { internal } from "./_generated/api";
+
+const MAX_IMPORT_LISTS = 20;
+const MAX_ITEMS_PER_LIST = 200;
+const MAX_TOTAL_ITEMS = 500;
+
+const ALLOWED_IMAGE_RE =
+  /^data:image\/(jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+function validateImageFormat(image?: string) {
+  if (!image) return;
+  if (image.length > MAX_BASE64) {
+    throw new Error("Image is too large (max 900KB)");
+  }
+  if (!ALLOWED_IMAGE_RE.test(image)) {
+    throw new Error(
+      "Invalid image format: must be a JPEG, PNG, WebP, or GIF data URL",
+    );
+  }
+}
 
 const importItemValidator = {
   name: v.string(),
@@ -35,6 +55,28 @@ export const importLists = mutation({
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     if (args.lists.length === 0) return { created: 0, importedItems: 0 };
+    if (args.lists.length > MAX_IMPORT_LISTS) {
+      throw new Error(
+        `Too many lists: ${args.lists.length} exceeds limit of ${MAX_IMPORT_LISTS}`,
+      );
+    }
+    if (args.targetListId && args.lists.length > 1) {
+      throw new Error("targetListId only supports a single list");
+    }
+    let totalItems = 0;
+    for (const list of args.lists) {
+      if (list.items.length > MAX_ITEMS_PER_LIST) {
+        throw new Error(
+          `Too many items in list "${list.title}": ${list.items.length} exceeds limit of ${MAX_ITEMS_PER_LIST}`,
+        );
+      }
+      totalItems += list.items.length;
+    }
+    if (totalItems > MAX_TOTAL_ITEMS) {
+      throw new Error(
+        `Too many total items: ${totalItems} exceeds limit of ${MAX_TOTAL_ITEMS}`,
+      );
+    }
 
     let created = 0;
     let importedItems = 0;
@@ -61,6 +103,7 @@ export const importLists = mutation({
         const name = (item.name ?? "").trim();
         if (!name) continue;
         validateItemFields(item);
+        validateImageFormat(item.image);
         const key = dedupeKey(name, item.url);
         if (dedupe && existingKeys.has(key)) continue;
         existingKeys.add(key);

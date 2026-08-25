@@ -2,9 +2,10 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://wisher.app/wishlist.schema.json",
   "title": "Wisher Wishlist Document",
-  "description": "Canonical schema for Wisher wishlist import/export documents. Images are stored inline as base64 data URLs.",
+  "description": "Canonical schema for Wisher wishlist import/export documents. Kept in sync with src/lib/importSchema.ts (Zod is the runtime validator). Images are stored inline as base64 data URLs.",
   "type": "object",
   "required": ["schemaVersion", "lists"],
+  "additionalProperties": false,
   "properties": {
     "schemaVersion": {
       "type": "integer",
@@ -22,6 +23,7 @@
     "wishlist": {
       "type": "object",
       "required": ["title"],
+      "additionalProperties": false,
       "properties": {
         "title": {
           "type": "string",
@@ -34,7 +36,8 @@
         },
         "eventDate": {
           "type": "integer",
-          "description": "Optional event date as a Unix timestamp (milliseconds)."
+          "minimum": 0,
+          "description": "Optional event date as a Unix timestamp (milliseconds), non-negative."
         },
         "ordered": {
           "type": "boolean",
@@ -42,6 +45,7 @@
         },
         "items": {
           "type": "array",
+          "default": [],
           "items": {
             "$ref": "#/definitions/item"
           }
@@ -51,6 +55,7 @@
     "item": {
       "type": "object",
       "required": ["name"],
+      "additionalProperties": false,
       "properties": {
         "name": {
           "type": "string",
@@ -60,7 +65,8 @@
         "url": {
           "type": "string",
           "format": "uri",
-          "description": "Optional product URL."
+          "pattern": "^https?://.+",
+          "description": "Optional product URL (http/https only)."
         },
         "priceMinor": {
           "type": "integer",
@@ -69,6 +75,7 @@
         },
         "currency": {
           "type": "string",
+          "pattern": "^[A-Za-z]{3}$",
           "default": "USD",
           "description": "ISO 4217 currency code, defaults to USD."
         },

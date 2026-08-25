@@ -1,45 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { memberRoleValidator as roleValidator } from "./schema";
 import { getAccess, requireOwner, requireMember } from "./helpers/access";
-
-const roleValidator = v.union(v.literal("editor"), v.literal("viewer"));
-
-/** Add an existing user to a list by their email as a member. Owner only. */
-export const addMemberByEmail = mutation({
-  args: {
-    wishlistId: v.id("wishlists"),
-    email: v.string(),
-    role: roleValidator,
-  },
-  handler: async (ctx, args) => {
-    const { user, list } = await requireOwner(ctx, args.wishlistId);
-    const email = args.email.trim().toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-      throw new Error("Invalid email address");
-    }
-    const existing = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", email))
-      .first();
-    if (!existing) return { added: false as const };
-    if (existing._id === user._id) return { added: false as const };
-
-    const already = await ctx.db
-      .query("wishlistMembers")
-      .withIndex("by_wishlist_user", (q) =>
-        q.eq("wishlistId", list._id).eq("userId", existing._id),
-      )
-      .first();
-    if (!already) {
-      await ctx.db.insert("wishlistMembers", {
-        wishlistId: list._id,
-        userId: existing._id,
-        role: args.role,
-      });
-    }
-    return { added: true as const };
-  },
-});
 
 export const updateMemberRole = mutation({
   args: {

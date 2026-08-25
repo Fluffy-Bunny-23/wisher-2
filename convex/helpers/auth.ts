@@ -1,4 +1,3 @@
-import { v } from "convex/values";
 import type { MutationCtx, QueryCtx, ActionCtx } from "../_generated/server";
 
 type Ctx = QueryCtx | MutationCtx | ActionCtx;
@@ -27,8 +26,3 @@ export async function requireUser(ctx: QueryCtx | MutationCtx) {
   }
   return { identity, user };
 }
-
-export const userFields = {
-  name: v.optional(v.string()),
-  email: v.optional(v.string()),
-};

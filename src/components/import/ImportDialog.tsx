@@ -23,6 +23,7 @@ export function ImportDialog({ listId, onImported, onClose }: Props) {
   const [target, setTarget] = useState<"new" | "existing">(listId ? "existing" : "new");
   const [dedupe, setDedupe] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [compressProgress, setCompressProgress] = useState<{ done: number; total: number } | null>(null);
 
   async function doImport(json: string) {
     let doc;
@@ -39,24 +40,32 @@ export function ImportDialog({ listId, onImported, onClose }: Props) {
     // bytes — deliberately matching MAX_BASE64's string-length semantics on
     // the server, and conservative since base64 chars >= decoded bytes.
     const MAX_IMAGE_BYTES = 900 * 1024;
+    // Collect oversized inline images first so they can be compressed
+    // concurrently with limited parallelism instead of sequentially.
+    const toCompress: (typeof doc.lists)[number]["items"][number][] = [];
     for (const list of doc.lists) {
       for (const item of list.items) {
-        if (item.image?.startsWith("data:image")) {
-          if (item.image.length > MAX_IMAGE_BYTES) {
-            try {
-              item.image = await compressImage(item.image);
-            } catch (err: any) {
-              toast(
-                `Image for "${item.name}" is too large and could not be compressed — it will be imported without an image.`,
-                "error",
-              );
-              item.image = undefined;
-              continue;
-            }
+        if (item.image?.startsWith("data:image") && item.image.length > MAX_IMAGE_BYTES) {
+          toCompress.push(item);
+        }
+      }
+    }
+    if (toCompress.length > 0) {
+      setBusy(true);
+      setCompressProgress({ done: 0, total: toCompress.length });
+      const CONCURRENCY = 3;
+      let next = 0;
+      let done = 0;
+      async function worker() {
+        while (next < toCompress.length) {
+          const idx = next++;
+          const item = toCompress[idx]!;
+          try {
+            let image = await compressImage(item.image!);
             // compress harder with smaller dimensions if still over limit
-            if (item.image.length > MAX_IMAGE_BYTES) {
+            if (image.length > MAX_IMAGE_BYTES) {
               try {
-                item.image = await compressImage(item.image, {
+                image = await compressImage(image, {
                   maxDimension: 300,
                   quality: 0.6,
                 });
@@ -69,16 +78,31 @@ export function ImportDialog({ listId, onImported, onClose }: Props) {
                 continue;
               }
             }
-            if (item.image.length > MAX_IMAGE_BYTES) {
+            if (image.length > MAX_IMAGE_BYTES) {
               toast(
                 `Image for "${item.name}" exceeds 900KB after compression and will be imported without an image.`,
                 "error",
               );
               item.image = undefined;
+            } else {
+              item.image = image;
             }
+          } catch {
+            toast(
+              `Image for "${item.name}" is too large and could not be compressed — it will be imported without an image.`,
+              "error",
+            );
+            item.image = undefined;
+          } finally {
+            done += 1;
+            setCompressProgress({ done, total: toCompress.length });
           }
         }
       }
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, toCompress.length) }, () => worker()),
+      );
+      setCompressProgress(null);
     }
     setBusy(true);
     try {
@@ -165,6 +189,11 @@ export function ImportDialog({ listId, onImported, onClose }: Props) {
             </label>
           </div>
 
+          {compressProgress && (
+            <p className="text-sm text-slate-500" role="status" aria-live="polite">
+              Compressing images {compressProgress.done}/{compressProgress.total}…
+            </p>
+          )}
           <div className="mt-1 flex gap-3">
             <Button type="submit" loading={busy} disabled={!text.trim()}>
               Import

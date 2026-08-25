@@ -9,7 +9,7 @@ const firebaseConfig = {
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
 };
 
-export const firebaseConfigured = Boolean(firebaseConfig.apiKey);
+const firebaseConfigured = Boolean(firebaseConfig.apiKey);
 
 /**
  * Firebase only initializes in the browser. During server-side rendering we

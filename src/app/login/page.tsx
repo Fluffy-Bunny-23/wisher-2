@@ -25,7 +25,14 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const redirect = params.get("redirect") || "/dashboard";
+  const rawRedirect = params.get("redirect");
+  const redirect =
+    rawRedirect &&
+    rawRedirect.startsWith("/") &&
+    !rawRedirect.startsWith("//") &&
+    !/^[a-z]+:/i.test(rawRedirect)
+      ? rawRedirect
+      : "/dashboard";
 
   useEffect(() => {
     if (!loading && user) router.replace(redirect);

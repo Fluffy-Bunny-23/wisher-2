@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useOfflineGuard } from "@/lib/useOffline";
 import { ItemForm } from "@/components/items/ItemForm";
 import { formatPrice, formatDate } from "@/lib/format";
+import { isAllowedUrl } from "@/lib/urlGuard";
 
 export default function ItemDetailPage() {
   const params = useParams<{ listId: string; itemId: string }>();
@@ -118,16 +119,21 @@ export default function ItemDetailPage() {
             </span>
           </div>
 
-          {item.url && (
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 inline-block break-all text-sm text-indigo-600 hover:underline"
-            >
-              {item.url}
-            </a>
-          )}
+          {item.url &&
+            (isAllowedUrl(item.url) ? (
+              <a
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-block break-all text-sm text-indigo-600 hover:underline"
+              >
+                {item.url}
+              </a>
+            ) : (
+              <span className="mt-3 inline-block break-all text-sm text-slate-600">
+                {item.url}
+              </span>
+            ))}
 
           {item.notes && (
             <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{item.notes}</p>

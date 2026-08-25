@@ -1,9 +1,11 @@
 import { z } from "zod";
 
-const httpUrlSchema = z
+import { isAllowedUrl } from "./urlGuard";
+
+export const httpUrlSchema = z
   .string()
   .url("url must be a valid http/https URL")
-  .refine((v) => v.startsWith("http://") || v.startsWith("https://"), {
+  .refine((v) => isAllowedUrl(v), {
     message: "url must be a valid http/https URL",
   });
 

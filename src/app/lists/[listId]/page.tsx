@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -33,9 +33,9 @@ export default function ListPage() {
   const listId = params.listId as any;
 
   const { authed } = useAuth();
+  const convex = useConvex();
   const list = useQuery(api.wishlists.getWishlist, authed ? { listId } : "skip");
   const items = useQuery(api.items.listItems, authed ? { wishlistId: listId } : "skip");
-  const exportData = useQuery(api.export.exportList, authed ? { listId } : "skip");
   const deleteList = useMutation(api.wishlists.deleteWishlist);
   const editWishlist = useMutation(api.wishlists.editWishlist);
   const leave = useMutation(api.wishlistMembers.leaveList);
@@ -53,6 +53,7 @@ export default function ListPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [visitorMode, setVisitorMode] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const loading = list === undefined || items === undefined;
 
@@ -69,9 +70,18 @@ export default function ListPage() {
   const purchasedCount = items?.filter((i: NonNullable<typeof items>[number]) => i.purchased).length ?? 0;
 
   async function onExport() {
-    if (!exportData) return;
-    downloadJson(exportData, `wisher-${list?.title ?? "list"}.json`);
-    toast("Exported", "success");
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const data = await convex.query(api.export.exportList, { listId });
+      if (!data) return;
+      downloadJson(data, `wisher-${list?.title ?? "list"}.json`);
+      toast("Exported", "success");
+    } catch (err: any) {
+      toast(err?.message ?? "Failed to export", "error");
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function onDelete() {
@@ -189,7 +199,7 @@ export default function ListPage() {
             Share
           </Button>
           {canEdit && (
-            <Button variant="secondary" onClick={onExport}>
+            <Button variant="secondary" onClick={onExport} loading={exporting}>
               Export
             </Button>
           )}

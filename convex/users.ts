@@ -1,6 +1,10 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireIdentity, requireUser } from "./helpers/auth";
+import {
+  assertStringLength,
+  MAX_USER_NAME_LENGTH,
+} from "./schema";
 
 export const storeUser = mutation({
   args: {},
@@ -51,8 +55,11 @@ export const updateProfile = mutation({
   args: { name: v.string() },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
+    const name = args.name.trim();
+    if (!name) throw new Error("Name is required");
+    assertStringLength(name, MAX_USER_NAME_LENGTH, "Name");
     await ctx.db.patch(user._id, {
-      name: args.name || undefined,
+      name,
     });
   },
 });

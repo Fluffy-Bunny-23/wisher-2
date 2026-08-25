@@ -1,10 +1,13 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireUser } from "./helpers/auth";
-import { requireOwner, requireMember } from "./helpers/access";
+import { requireOwner } from "./helpers/access";
 import { randomToken } from "./helpers/token";
-
-const roleValidator = v.union(v.literal("editor"), v.literal("viewer"));
+import {
+  assertStringLength,
+  memberRoleValidator as roleValidator,
+  MAX_USER_EMAIL_LENGTH,
+} from "./schema";
 
 /**
  * Invite a user by email. If they already have an account they are added as a
@@ -23,6 +26,7 @@ export const inviteByEmail = mutation({
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       throw new Error("Invalid email address");
     }
+    assertStringLength(email, MAX_USER_EMAIL_LENGTH, "Email");
 
     const existing = await ctx.db
       .query("users")
@@ -36,7 +40,11 @@ export const inviteByEmail = mutation({
           q.eq("wishlistId", list._id).eq("userId", existing._id),
         )
         .first();
-      if (!already) {
+      if (already) {
+        if (already.role !== args.role) {
+          await ctx.db.patch(already._id, { role: args.role });
+        }
+      } else {
         await ctx.db.insert("wishlistMembers", {
           wishlistId: list._id,
           userId: existing._id,
@@ -138,9 +146,9 @@ export const revokeInvite = mutation({
     await requireOwner(ctx, args.wishlistId);
     const invite = await ctx.db
       .query("wishlistInvites")
-      .withIndex("by_wishlistId", (q) => q.eq("wishlistId", args.wishlistId))
-      .filter((q) => q.eq(q.field("token"), args.token))
+      .withIndex("by_token", (q) => q.eq("token", args.token))
       .first();
-    if (invite) await ctx.db.delete(invite._id);
+    if (!invite || invite.wishlistId !== args.wishlistId) return;
+    await ctx.db.delete(invite._id);
   },
 });

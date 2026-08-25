@@ -1,5 +1,3 @@
-import { v } from "convex/values";
-
 export function randomToken(): string {
   const bytes = new Uint8Array(16);
   if (typeof crypto === "undefined" || !crypto.getRandomValues) {
