@@ -69,7 +69,7 @@ export default defineSchema({
   wishlistMembers: defineTable({
     wishlistId: v.id("wishlists"),
     userId: v.id("users"),
-    role: v.union(v.literal("editor"), v.literal("viewer")),
+    role: memberRoleValidator,
   })
     .index("by_wishlistId", ["wishlistId"])
     .index("by_userId", ["userId"])
@@ -78,7 +78,7 @@ export default defineSchema({
   wishlistInvites: defineTable({
     wishlistId: v.id("wishlists"),
     token: v.string(),
-    role: v.union(v.literal("editor"), v.literal("viewer")),
+    role: memberRoleValidator,
     email: v.optional(v.string()),
     createdById: v.id("users"),
     usedAt: v.optional(v.number()),

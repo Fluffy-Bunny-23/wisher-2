@@ -25,6 +25,9 @@ async function collectList(ctx: QueryCtx, list: any, includeImages: boolean) {
       if (item.currency) out.currency = item.currency;
       if (includeImages && item.image) {
         const len = item.image.length;
+        // Always include at least one image even if it alone exceeds the cap,
+        // so a single-item export round-trips. This intentionally lets the
+        // first image violate the 800 KiB aggregate budget.
         if (imageBytes + len <= MAX_EXPORT_IMAGE_BYTES || imageBytes === 0) {
           out.image = item.image;
           imageBytes += len;

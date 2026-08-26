@@ -26,13 +26,28 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
 
   const rawRedirect = params.get("redirect");
-  const redirect =
-    rawRedirect &&
-    rawRedirect.startsWith("/") &&
-    !rawRedirect.startsWith("//") &&
-    !/^[a-z]+:/i.test(rawRedirect)
-      ? rawRedirect
-      : "/dashboard";
+  let redirect = "/dashboard";
+  if (rawRedirect) {
+    try {
+      // URLSearchParams decodes once; an attacker may double-encode
+      // "/%2F%2Fevil.com" -> "/%2F%2Fevil.com" -> "//evil.com" after this
+      // second decode, so check again for "//" and "scheme:".
+      const decoded = decodeURIComponent(rawRedirect);
+      if (
+        decoded.startsWith("/") &&
+        !decoded.startsWith("//") &&
+        !/^[a-z][a-z0-9+.-]*:/i.test(decoded)
+      ) {
+        // Resolve against current origin so URL normalization (e.g. "/%2e%2e")
+        // can't smuggle an origin switch past the string checks.
+        const base =
+          typeof window !== "undefined" ? window.location.origin : "http://localhost";
+        if (new URL(decoded, base).origin === base) redirect = decoded;
+      }
+    } catch {
+      // Malformed encoding — keep default.
+    }
+  }
 
   useEffect(() => {
     if (!loading && user) router.replace(redirect);
