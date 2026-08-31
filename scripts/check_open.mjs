@@ -1,0 +1,15 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch({args:['--no-sandbox','--disable-setuid-sandbox']});
+const c = await b.newContext(); const p = await c.newPage();
+const logs=[]; p.on('console',m=>logs.push(m.text().slice(0,120))); p.on('pageerror',e=>logs.push('ERR '+e.message.slice(0,200)));
+await p.goto('https://yjf19mk2jdwl.shares.zrok.io/', {waitUntil:'domcontentloaded', timeout:25000});
+await p.waitForTimeout(7000);
+console.log("TITLE:", await p.title());
+console.log("URL:", p.url());
+console.log("BODY has Welcome:", (await p.evaluate(()=>document.body.innerText)).includes('Welcome'));
+console.log("BODY has Wisher:", (await p.evaluate(()=>document.body.innerText)).includes('Wisher'));
+console.log("HTML has interstitial:", (await p.content()).includes('You are about to visit'));
+console.log("BODY snippet:", (await p.evaluate(()=>document.body.innerText.slice(0,700).replace(/\n/g,' | '))));
+if(logs.length) logs.slice(0,10).forEach(l=>console.log("LOG:",l));
+await p.screenshot({path:'/tmp/open-final.png', fullPage:false}); console.log("screenshot /tmp/open-final.png");
+await b.close();
